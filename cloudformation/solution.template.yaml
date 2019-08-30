@@ -451,24 +451,6 @@ Resources:
                     - ''
                     - - 'arn:aws:s3:::'
                       - !Ref UnEngagedAthenaQueryResultS3Bucket
-              # -
-              #   Effect: "Allow"
-              #   Action:
-              #     - "mobiletargeting:CreateSegment"
-              #     - "mobiletargeting:UpdateSegment"
-              #     - "mobiletargeting:GetSegmentVersion"
-              #     - "mobiletargeting:GetSegment"
-              #     - "mobiletargeting:GetSegmentImportJobs"
-              #     - "mobiletargeting:GetSegments"
-              #     - "mobiletargeting:GetSegmentVersions"
-              #     - "mobiletargeting:CreateImportJob"
-              #   Resource:
-              #     - !Sub
-              #       - "arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}/segments/*"
-              #       - {ApplicationId: !Ref PinpointReEngagingApplication }
-              #     - !Sub
-              #       - "arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}"
-              #       - {ApplicationId: !Ref PinpointReEngagingApplication }
 
   QueryUnEngagedCloudWatchEventRole:
     Type: AWS::IAM::Role

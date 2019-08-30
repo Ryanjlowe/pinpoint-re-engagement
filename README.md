@@ -1,6 +1,6 @@
 # Amazon Pinpoint Re-Engagement Campaigns using Amazon Athena
 
-This does stuff - a good summary here
+Re-Engage your users, increase your email sending reputation with Internet Service Providers (ISPs) and webmail providers, attain better visibility into campaign metrics, and decrease your email sending costs with a well running re-engagement marketing campaign targeting users who are no longer engaged with your emails.
 
 ## Use Case: What is a Re-Engagement Campaign
 
@@ -48,6 +48,7 @@ If users fail to be re-engaged, then suppressing them from future email lists al
 
 ## Solution
 This Solution provides a complete solution to setup and automate a re-engagement campaign using Amazon Pinpoint.  It will:
+* Optionally: Create a new Amazon Pinpoint Project to use for your outgoing campaigns
 * Create a new Amazon Pinpoint Project called "My Re-Engagement" Project
 * Create a segment named "Unengaged Users" in the "My Re-Engagement" Project
 * Configure a Kinesis Stream and Kinesis Firehose to route Pinpoint engagement events (Sends, Opens, Clicks, etc) to Amazon S3
