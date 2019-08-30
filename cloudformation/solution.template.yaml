@@ -1,0 +1,881 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  PinpointEventsS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      Tags:
+        -
+          Key: "Name"
+          Value: "Pinpoint Event Firehose Stream Destination"
+  PinpointKinesisFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - firehose.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "glue:GetTableVersions"
+                Resource: "*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:AbortMultipartUpload"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:ListBucketMultipartUploads"
+                  - "s3:PutObject"
+                Resource:
+                  - !GetAtt PinpointEventsS3Bucket.Arn
+                  - !Join
+                    - ""
+                    - - !GetAtt PinpointEventsS3Bucket.Arn
+                      - "/*"
+                  - "arn:aws:s3:::%FIREHOSE_BUCKET_NAME%"
+                  - "arn:aws:s3:::%FIREHOSE_BUCKET_NAME%/*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "lambda:InvokeFunction"
+                  - "lambda:GetFunctionConfiguration"
+                Resource: !GetAtt FirehoseRecordConversionLambda.Arn
+              -
+                Effect: "Allow"
+                Action: "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/*:log-stream:*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "kinesis:DescribeStream"
+                  - "kinesis:GetShardIterator"
+                  - "kinesis:GetRecords"
+                Resource: !GetAtt PinpointKinesisStream.Arn
+              -
+                Effect: "Allow"
+                Action: "kms:Decrypt"
+                Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/%SSE_KEY_ID%"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: "kinesis.us-west-2.amazonaws.com"
+                  StringLike:
+                    kms:EncryptionContext:aws:kinesis:arn: !GetAtt PinpointKinesisStream.Arn
+
+  FirehoseRecordConversionLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+
+  PinpointKinesisStreamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - pinpoint.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "kinesis:PutRecords"
+                  - "kinesis:DescribeStream"
+                Resource: !GetAtt PinpointKinesisStream.Arn
+
+  CrawlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                  - "s3:PutObject"
+                Resource: !Join
+                  - ''
+                  - - 'arn:aws:s3:::'
+                    - !Ref PinpointEventsS3Bucket
+                    - '*'
+
+  PinpointEngagingApplication:
+    Type: AWS::Pinpoint::App
+    Properties:
+      Name: "My Enaging Project"
+
+  PinpointReEngagingApplication:
+    Type: AWS::Pinpoint::App
+    Properties:
+      Name: "My Re-Engagement Project"
+
+  PinpointKinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      ShardCount: 1
+      Tags:
+        -
+          Key: "Name"
+          Value: "Pinpoint Event Firehose Stream Destination"
+
+  PinpointEngagingApplicationStream:
+    Type: AWS::Pinpoint::EventStream
+    Properties:
+      ApplicationId: !Ref PinpointEngagingApplication
+      DestinationStreamArn: !GetAtt PinpointKinesisStream.Arn
+      RoleArn: !GetAtt PinpointKinesisStreamRole.Arn
+
+  PinpointReEngagingApplicationStream:
+    Type: AWS::Pinpoint::EventStream
+    Properties:
+      ApplicationId: !Ref PinpointReEngagingApplication
+      DestinationStreamArn: !GetAtt PinpointKinesisStream.Arn
+      RoleArn: !GetAtt PinpointKinesisStreamRole.Arn
+
+  FirehoseRecordConversionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+        Handler: index.handler
+        Role: !GetAtt FirehoseRecordConversionLambdaRole.Arn
+        Runtime: "nodejs8.10"
+        Timeout: 60
+        Code:
+          ZipFile: |
+            exports.handler = async (event) => {
+                const output = event.records.map((record) => {
+                    const data = JSON.parse(new Buffer(record.data, 'base64').toString('ascii'));
+                    return {
+                        data: new Buffer.from(JSON.stringify(data) + '\n').toString('base64'),
+                        recordId: record.recordId,
+                        result: 'Ok'
+                    };
+                });
+                return {records: output};
+            };
+
+  PinpointEventFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamType: "KinesisStreamAsSource"
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !GetAtt PinpointKinesisStream.Arn
+        RoleARN: !GetAtt PinpointKinesisFirehoseRole.Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt PinpointEventsS3Bucket.Arn
+        BufferingHints:
+          IntervalInSeconds: 300
+          SizeInMBs: 5
+        CompressionFormat: "UNCOMPRESSED"
+        RoleARN: !GetAtt PinpointKinesisFirehoseRole.Arn
+        ProcessingConfiguration:
+          Enabled: TRUE
+          Processors:
+            -
+              Parameters:
+                -
+                  ParameterName: "LambdaArn"
+                  ParameterValue: !GetAtt FirehoseRecordConversionLambda.Arn
+                -
+                  ParameterName: "BufferIntervalInSeconds"
+                  ParameterValue: 60
+                -
+                  ParameterName: "BufferSizeInMBs"
+                  ParameterValue: 3
+                -
+                  ParameterName: "NumberOfRetries"
+                  ParameterValue: 3
+                -
+                  ParameterName: "RoleArn"
+                  ParameterValue: !GetAtt PinpointKinesisFirehoseRole.Arn
+              Type: "Lambda"
+
+  PinpointReEngagementSegment:
+    Type: AWS::Pinpoint::Segment
+    Properties:
+      ApplicationId: !Ref PinpointReEngagingApplication
+      Name: "ReEngagementSegment"
+
+  PinpointEventDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: "pinpoint-events"
+        Description: "Pinpoint Streaming Event Database"
+
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Role: !GetAtt CrawlerRole.Arn
+      Description: "Crawler of Pinpoint Events streaming into S3 from Kinesis"
+      Schedule:
+        ScheduleExpression: "cron(0/15 * * * ? *)"
+      DatabaseName: !Ref PinpointEventDatabase
+      Targets:
+        S3Targets:
+          - Path: !Join
+            - ''
+            - - 's3://'
+              - !Ref PinpointEventsS3Bucket
+      Name: pinpoint-event-crawler
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"},\"Tables\":{\"AddOrUpdateBehavior\":\"MergeNewColumns\"}}}"
+
+  QueryUnEngagedStepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "states.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "lambda:InvokeFunction"
+                Resource:
+                  - !GetAtt QueryStartUnEngagedLambda.Arn
+                  - !GetAtt QueryStatusUnEngagedLambda.Arn
+                  - !GetAtt QueryImportSegmentUnEngagedLambda.Arn
+                  - !GetAtt ImportStatusUnegagedLambda.Arn
+                  - !GetAtt ImportSuccessTagLambda.Arn
+
+  QueryUnEngagedLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "athena:GetQueryExecution"
+                  - "athena:GetQueryResults"
+                  - "athena:StartQueryExecution"
+                  - "athena:GetNamedQuery"
+                Resource: "*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "glue:GetDatabase"
+                  - "glue:GetDatabases"
+                  - "glue:GetTable"
+                  - "glue:GetTables"
+                  - "glue:GetPartition"
+                  - "glue:GetPartitions"
+                Resource: "*"
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:AbortMultipartUpload"
+                  - "s3:CreateBucket"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:ListBucketMultipartUploads"
+                  - "s3:ListMultipartUploadParts"
+                  - "s3:PutObject"
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref UnEngagedAthenaQueryResultS3Bucket
+                      - '/*'
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref UnEngagedAthenaQueryResultS3Bucket
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref PinpointEventsS3Bucket
+                      - '/*'
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref PinpointEventsS3Bucket
+              -
+                Effect: "Allow"
+                Action:
+                  - "mobiletargeting:CreateSegment"
+                  - "mobiletargeting:UpdateSegment"
+                  - "mobiletargeting:GetSegmentVersion"
+                  - "mobiletargeting:GetSegment"
+                  - "mobiletargeting:GetSegmentImportJobs"
+                  - "mobiletargeting:GetSegments"
+                  - "mobiletargeting:GetSegmentVersions"
+                  - "mobiletargeting:CreateImportJob"
+                  - "mobiletargeting:TagResource"
+                  - "mobiletargeting:GetImportJob"
+                Resource:
+                  - !Sub
+                    - "arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}*"
+                    - {ApplicationId: !Ref PinpointReEngagingApplication }
+                  - !Sub
+                    - "arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}"
+                    - {ApplicationId: !Ref PinpointReEngagingApplication }
+                  - !Sub
+                    - "arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}/jobs/import/*"
+                    - {ApplicationId: !Ref PinpointReEngagingApplication }
+              -
+                Effect: "Allow"
+                Action: "iam:PassRole"
+                Resource: !GetAtt PinpointImportRole.Arn
+
+
+  PinpointImportRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - pinpoint.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:Get*"
+                  - "s3:List*"
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref UnEngagedAthenaQueryResultS3Bucket
+                      - '*'
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref UnEngagedAthenaQueryResultS3Bucket
+              # -
+              #   Effect: "Allow"
+              #   Action:
+              #     - "mobiletargeting:CreateSegment"
+              #     - "mobiletargeting:UpdateSegment"
+              #     - "mobiletargeting:GetSegmentVersion"
+              #     - "mobiletargeting:GetSegment"
+              #     - "mobiletargeting:GetSegmentImportJobs"
+              #     - "mobiletargeting:GetSegments"
+              #     - "mobiletargeting:GetSegmentVersions"
+              #     - "mobiletargeting:CreateImportJob"
+              #   Resource:
+              #     - !Sub
+              #       - "arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}/segments/*"
+              #       - {ApplicationId: !Ref PinpointReEngagingApplication }
+              #     - !Sub
+              #       - "arn:aws:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/${ApplicationId}"
+              #       - {ApplicationId: !Ref PinpointReEngagingApplication }
+
+  QueryUnEngagedCloudWatchEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "events.amazonaws.com"
+            Action:
+              - 'sts:AssumeRole'
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "states:StartExecution"
+                Resource: !Ref QueryUnEngagedStepFunction
+
+  UnEngagedAthenaQueryResultS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      Tags:
+        -
+          Key: "Name"
+          Value: "UnEngaged User Athena Query Results"
+
+  QueryUnEnagedNamedQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref PinpointEventDatabase
+      Description: "Query to find UnEngaged Pinpoint Users who are receiving emails but not engaging."
+      QueryString:
+        !Sub
+          - |-
+            WITH dataset AS (
+              SELECT
+                facets.email_channel.mail_event.mail.destination as emailaddresses,
+                event_type,
+                arrival_timestamp
+              FROM "${DatabaseName}"."${TableName}"
+              WHERE
+                (event_type = '_email.delivered' AND from_unixtime(arrival_timestamp/1000) > date_add('month', -10, current_date))
+               OR
+                (event_type IN ('_email.open', '_email.click') AND from_unixtime(arrival_timestamp/1000) > date_add('month', -6, current_date))
+            ),
+            delivered AS (
+              SELECT
+                emailaddresses,
+                'DELIVERED' AS event_type,
+                arrival_timestamp
+              FROM dataset
+              WHERE event_type = '_email.delivered'
+            ),
+            engaged AS (
+              SELECT
+                emailaddresses,
+                'ENGAGEMENT' AS event_type,
+                arrival_timestamp
+              FROM dataset
+              WHERE event_type IN ('_email.open', '_email.click')
+
+            ),
+            joined AS (
+              SELECT
+                emailaddresses,
+                arrival_timestamp AS delivered_timestamp,
+                null AS engagement_timestamp
+              FROM delivered
+              UNION
+              SELECT
+                emailaddresses,
+                null AS delivered_timestamp,
+                arrival_timestamp AS engagement_timestamp
+              FROM engaged
+            ),
+            flatten AS (
+              SELECT emailaddress, delivered_timestamp, engagement_timestamp
+              FROM joined
+              CROSS JOIN UNNEST(emailaddresses) as t(emailaddress)
+            ),
+            min_max AS (
+              SELECT
+                emailaddress,
+                MAX(delivered_timestamp) AS max_delivered_timestamp,
+                MIN(delivered_timestamp) AS min_delivered_timestamp,
+                MAX(engagement_timestamp) AS last_engagement,
+                COUNT(delivered_timestamp) AS num_delivered
+              FROM flatten
+              GROUP BY emailaddress
+            )
+            SELECT
+              'EMAIL' AS ChannelType,
+              emailaddress AS Id,
+              emailaddress AS Address,
+              max_delivered_timestamp AS "Attributes.max_delivered_timestamp",
+              min_delivered_timestamp AS "Attributes.min_delivered_timestamp",
+              last_engagement AS "Attributes.last_engagement",
+              num_delivered AS "Attributes.num_delivered"
+            FROM min_max
+            WHERE last_engagement IS NULL -- No Engagement in the last 6 months
+              AND from_unixtime(min_delivered_timestamp/1000) < date_add('month', -6, current_date) -- Emails started more than 6 months ago
+              AND num_delivered > 5 -- Has at least 5 delivered emails
+          - {DatabaseName: !Ref PinpointEventDatabase, TableName: !Join [ "_", !Split [ "-", !Ref PinpointEventsS3Bucket]] }
+
+  QueryStartUnEngagedLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt QueryUnEngagedLambdaRole.Arn
+      Runtime: "nodejs8.10"
+      Timeout: 60
+      Environment:
+        Variables:
+          S3_DESTINATION: !Ref UnEngagedAthenaQueryResultS3Bucket
+          UNENGAGED_NAMED_QUERY: !Ref QueryUnEnagedNamedQuery
+      Code:
+        ZipFile: |
+          var AWS = require('aws-sdk');
+          AWS.config.update({
+            region: process.env.AWS_REGION
+          });
+          const athena = new AWS.Athena();
+          exports.handler = async (event) => {
+            return athena.getNamedQuery({NamedQueryId: process.env.UNENGAGED_NAMED_QUERY}).promise()
+              .then((data) => {
+                return athena.startQueryExecution({
+                  QueryString: data.NamedQuery.QueryString,
+                  QueryExecutionContext: {
+                    Database: data.NamedQuery.Database
+                  },
+                  ResultConfiguration: {
+                    OutputLocation: `s3://${process.env.S3_DESTINATION}/`
+                  }
+                }).promise();
+              })
+              .then((data) => {
+                console.log(JSON.stringify(data));
+                return {QueryExecutionId: data.QueryExecutionId, WaitTime: 1};
+              });
+          };
+  QueryStatusUnEngagedLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt QueryUnEngagedLambdaRole.Arn
+      Runtime: "nodejs8.10"
+      Timeout: 60
+      Code:
+        ZipFile: |
+          var AWS = require('aws-sdk');
+          AWS.config.update({
+            region: process.env.AWS_REGION
+          });
+          const athena = new AWS.Athena();
+          exports.handler = async (event) => {
+            //  athena.getQueryExecution
+            return athena.getQueryExecution({QueryExecutionId: event.QueryExecutionId}).promise()
+              .then((data) => {
+                console.log(JSON.stringify(data));
+                return {
+                  QueryExecutionId: data.QueryExecution.QueryExecutionId,
+                  OutputLocation: data.QueryExecution.ResultConfiguration.OutputLocation,
+                  Status: data.QueryExecution.Status.State,
+                  WaitTime: event.WaitTime * 2,
+                };
+              });
+          };
+  QueryImportSegmentUnEngagedLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt QueryUnEngagedLambdaRole.Arn
+      Runtime: "nodejs8.10"
+      Timeout: 60
+      Environment:
+        Variables:
+          APPLICATION_ID: !Ref PinpointReEngagingApplication
+          ROLE_ARN: !GetAtt PinpointImportRole.Arn
+          SEGMENT_NAME: "Unengaged Users"
+      Code:
+        ZipFile: |
+          var AWS = require('aws-sdk');
+          AWS.config.update({
+            region: process.env.AWS_REGION
+          });
+          AWS.config.update({
+            region: process.env.AWS_REGION
+          });
+          const pinpoint = new AWS.Pinpoint();
+          exports.handler = async (event) => {
+            return pinpoint.getSegments({ApplicationId: process.env.APPLICATION_ID}).promise()
+            .then((data) => {
+              console.log(JSON.stringify(data));
+
+              const foundSegment = data.SegmentsResponse.Item.find(x => x.SegmentType === "IMPORT" && x.tags.REENGAGEMENT === "YES");
+              if (foundSegment) {
+
+                return pinpoint.createImportJob({
+                  ApplicationId: process.env.APPLICATION_ID,
+                  ImportJobRequest: {
+                    Format: "CSV",
+                    RoleArn: process.env.ROLE_ARN,
+                    S3Url: event.OutputLocation,
+                    SegmentId: foundSegment.Id
+                  }
+                }).promise();
+
+              } else {
+
+                return pinpoint.createImportJob({
+                  ApplicationId: process.env.APPLICATION_ID,
+                  ImportJobRequest: {
+                    Format: "CSV",
+                    RoleArn: process.env.ROLE_ARN,
+                    DefineSegment: true,
+                    S3Url: event.OutputLocation,
+                    SegmentName: process.env.SEGMENT_NAME
+                  }
+                }).promise()
+              }
+
+            })
+            .then((data) => {
+              console.log(JSON.stringify(data));
+              return {
+                ImportId: data.ImportJobResponse.Id,
+                SegmentId: data.ImportJobResponse.Definition.SegmentId,
+                ExternalId: data.ImportJobResponse.Definition.ExternalId,
+                WaitTime: 1
+              };
+            });
+          };
+
+  ImportStatusUnegagedLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt QueryUnEngagedLambdaRole.Arn
+      Runtime: "nodejs8.10"
+      Timeout: 60
+      Environment:
+        Variables:
+          APPLICATION_ID: !Ref PinpointReEngagingApplication
+      Code:
+        ZipFile: |
+          var AWS = require('aws-sdk');
+          AWS.config.update({
+            region: process.env.AWS_REGION
+          });
+          const pinpoint = new AWS.Pinpoint();
+          exports.handler = async (event) => {
+            return pinpoint.getImportJob({
+              ApplicationId: process.env.APPLICATION_ID,
+              JobId: event.ImportId
+            }).promise()
+            .then((data) => {
+              console.log(JSON.stringify(data));
+              return {
+                ImportId: data.ImportJobResponse.Id,
+                SegmentId: data.ImportJobResponse.Definition.SegmentId,
+                ExternalId: data.ImportJobResponse.Definition.ExternalId,
+                Status: data.ImportJobResponse.JobStatus,
+                WaitTime: 1
+              };
+            });
+          };
+
+  ImportSuccessTagLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt QueryUnEngagedLambdaRole.Arn
+      Runtime: "nodejs8.10"
+      Timeout: 60
+      Environment:
+        Variables:
+          APPLICATION_ID: !Ref PinpointReEngagingApplication
+      Code:
+        ZipFile: |
+          var AWS = require('aws-sdk');
+          AWS.config.update({
+            region: process.env.AWS_REGION
+          });
+          const pinpoint = new AWS.Pinpoint();
+          exports.handler = async (event) => {
+            return pinpoint.tagResource({
+              ResourceArn: `arn:aws:mobiletargeting:${process.env.AWS_REGION}:${event.ExternalId}:apps/${process.env.APPLICATION_ID}/segments/${event.SegmentId}`,
+              TagsModel: {
+                tags: {
+                  'REENGAGEMENT': 'YES'
+                }
+              }
+
+            }).promise();
+          };
+
+  QueryUnEngagedStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      RoleArn: !GetAtt QueryUnEngagedStepFunctionRole.Arn
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "StartAt": "QueryStartUnEngaged",
+              "States": {
+                "QueryStartUnEngaged": {
+                  "Type": "Task",
+                  "Resource": "${QueryStartUnEngagedLambdaArn}",
+                  "Next": "QueryWait"
+                },
+                "QueryWait" : {
+                  "Type": "Wait",
+                  "SecondsPath": "$.WaitTime",
+                  "Next": "QueryStatusUnEngagedLambda"
+                },
+                "QueryStatusUnEngagedLambda": {
+                  "Type": "Task",
+                  "Resource": "${QueryStatusUnEngagedLambdaArn}",
+                  "Next": "IsQueryFinished"
+                },
+                "IsQueryFinished":{
+                  "Type": "Choice",
+                  "Default": "QueryWait",
+                  "Choices": [{
+                      "Variable": "$.Status",
+                      "StringEquals": "FAILED",
+                      "Next": "QueryFailed"
+                  },{
+                      "Variable": "$.Status",
+                      "StringEquals": "SUCCEEDED",
+                      "Next": "QueryImportSegmentUnEngagedLambda"
+                  }]
+                },
+                "QueryFailed": {
+                    "Type": "Fail",
+                    "Cause": "Athena execution failed",
+                    "Error": "Athena execution failed"
+                },
+                "QueryImportSegmentUnEngagedLambda": {
+                    "Type": "Task",
+                    "Resource": "${QueryImportSegmentUnEngagedLambdaArn}",
+                    "Next": "ImportSegmentWait"
+                },
+                "ImportSegmentWait": {
+                  "Type": "Wait",
+                  "SecondsPath": "$.WaitTime",
+                  "Next": "ImportStatusUnegagedLambda"
+                },
+                "ImportStatusUnegagedLambda": {
+                  "Type": "Task",
+                  "Resource": "${ImportStatusUnegagedLambdaArn}",
+                  "Next": "IsImportFinished"
+                },
+                "IsImportFinished": {
+                  "Type": "Choice",
+                  "Default": "ImportSegmentWait",
+                  "Choices": [{
+                      "Variable": "$.Status",
+                      "StringEquals": "FAILED",
+                      "Next": "ImportFailed"
+                  },{
+                      "Variable": "$.Status",
+                      "StringEquals": "COMPLETED",
+                      "Next": "ImportSuccessTagLambda"
+                  }]
+                },
+                "ImportFailed":{
+                  "Type": "Fail",
+                  "Cause": "Pinpoint Segment Import failed",
+                  "Error": "Pinpoint Segment Import failed"
+                },
+                "ImportSuccessTagLambda":{
+                  "Type": "Task",
+                  "Resource": "${ImportSuccessTagLambdaArn}",
+                  "End": true
+                }
+              }
+            }
+          - {QueryStartUnEngagedLambdaArn: !GetAtt QueryStartUnEngagedLambda.Arn, QueryStatusUnEngagedLambdaArn: !GetAtt QueryStatusUnEngagedLambda.Arn, QueryImportSegmentUnEngagedLambdaArn: !GetAtt QueryImportSegmentUnEngagedLambda.Arn, ImportStatusUnegagedLambdaArn: !GetAtt ImportStatusUnegagedLambda.Arn, ImportSuccessTagLambdaArn: !GetAtt ImportSuccessTagLambda.Arn}
+
+
+  QueryUnEngagedCloudWatchEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Run the QueryUnEngagedStepFunction Daily"
+      ScheduleExpression: "cron(0 2 * * ? *)"
+      State: "ENABLED"
+      RoleArn: !GetAtt QueryUnEngagedCloudWatchEventRole.Arn
+      Targets:
+        -
+          Arn: !Ref QueryUnEngagedStepFunction
+          Id: "QueryUnEngagedStepFunction"
+          RoleArn: !GetAtt QueryUnEngagedCloudWatchEventRole.Arn
+
+Outputs:
+  PinpointEventsS3BucketARN:
+    Description: ARN of your Pinpoint Events S3 Bucket
+    Value: !GetAtt  PinpointEventsS3Bucket.Arn
+  PinpointEventsKinesisStreamARN:
+    Description: ARN of the Kinesis Stream to use when configuring the Pinpoint Application Event Stream
+    Value: !GetAtt PinpointKinesisStream.Arn
