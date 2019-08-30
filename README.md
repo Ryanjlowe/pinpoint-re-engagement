@@ -52,12 +52,18 @@ This Solution provides a complete solution to setup and automate a re-engagement
 * Create a new Amazon Pinpoint Project called "My Re-Engagement" Project
 * Create a segment named "Unengaged Users" in the "My Re-Engagement" Project
 * Configure a Kinesis Stream and Kinesis Firehose to route Pinpoint engagement events (Sends, Opens, Clicks, etc) to Amazon S3
-* Set up a Daily process using Amazon Cloudwatch Events, Amazon Step Functions, AWS Lambda, Amazon Athena to query the engagement data in Amazon S3 and update the "Unegaged Users" Segment
+* Set up a Daily process using Amazon CloudWatch Events, Amazon Step Functions, AWS Lambda, Amazon Athena to query the engagement data in Amazon S3 and update the "Unegaged Users" Segment
 * The Query determines un-engaged by:
   * Looks at users who have received at least 5 emails in the last 10 months
   * Selects only the users who have not Opened or Clicked an email in the last 6 months
 
 All that is left is for you to setup a Campaign in Amazon Pinpoint to run daily that will use the "Unegaged Users" segment and design the email messaging appropriately.
+
+### Step Function State Machine
+
+The Solution uses a State Machine in Amazon Step Functions to perform the daily queries and segment imports.  It uses a series of Lambda functions to perform asynchronous actions avoiding paying for Lambda execution time to wait for processing of queries or imports.  The State Machine is kicked off daily by a CloudWatch Event scheduled to run daily.
+
+![Screenshot](images/statemachine.png)
 
 ### Athena Query
 ```
