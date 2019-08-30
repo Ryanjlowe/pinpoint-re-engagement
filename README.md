@@ -15,16 +15,16 @@ Main files:
 .
 ├── README.MD                                           <-- This instructions file
 ├── cloudformation                                      <-- Folder for the AWS CloudFormation Templates
-│   └── solution.template.yaml                          <-- AWS CloudFormation Template to configure the solution
+│   └── solution.template.yaml                          <-- Template to configure the solution
 ├── lambdas                                             <-- Folder for the AWS Lambda Function code
-│   └── QueryStartUnEngagedLambda.js                    <-- AWS Lambda function code to kick-off the Unengaged query
-│   └── QueryStatusUnEngagedLambda.js                   <-- AWS Lambda function code to check the status of the Unengaged query
-│   └── QueryImportSegmentUnEngagedLambda.js            <-- AWS Lambda function code to start the Segment Import
-│   └── ImportStatusUnegagedLambda.js                   <-- AWS Lambda function code to check for the status of the Segment Import
-│   └── ImportSuccessTagLambda.js                       <-- AWS Lambda function code to apply a tag to the Amazon Pinpoint Segment
-│   └── FirehoseRecordConversionLambda.js               <-- AWS Lambda function code to add line breaks in the Amazon Pinpoint event stream
-├── sql                                                 <-- Folder for the Amazon Athena SQL queries
-│   └── find_unegaged_users.sql                         <-- SQL Query to find Unengaged users
+│   └── QueryStartUnEngagedLambda.js                    <-- Kick-off the Unengaged query
+│   └── QueryStatusUnEngagedLambda.js                   <-- Check the status of the Unengaged query
+│   └── QueryImportSegmentUnEngagedLambda.js            <-- Start the Segment Import
+│   └── ImportStatusUnegagedLambda.js                   <-- Check for the status of the Segment Import
+│   └── ImportSuccessTagLambda.js                       <-- Apply a tag to the Pinpoint Segment
+│   └── FirehoseRecordConversionLambda.js               <-- Add line breaks in the Pinpoint event stream
+├── sql                                                 <-- Folder for the Athena SQL queries
+│   └── find_unegaged_users.sql                         <-- Query to find Unengaged users
 ```
 
 ## Why are Re-Engagement Campaigns Important
