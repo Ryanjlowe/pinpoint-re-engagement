@@ -137,6 +137,16 @@ WHERE last_engagement IS NULL -- No Engagement in the last 6 months
   AND num_delivered > 5 -- Has at least 5 delivered emails
 ```
 
+Query Details
+* The final SELECT creates a CSV format that can be imported directly into Amazon Pinpoint.  It therefore creates three Amazon Pinpoint Endpoint attributes for:
+ * max_delivered_timestamp - the latest delivered message in a 10 month window
+ * min_delivered_timestamp - the first delivered message in a 10 month window
+ * last_engagement - Last time the user engaged with an email
+ * num_delivered - Number of emails delivered in the last 10 months
+
+  These attributes can be used to further refine the "Unengaged Users" Segment.
+* Query can be easily tuned to match your specific re-engagement requirements.
+
 ## Prerequisites
 
 You need the following:
